@@ -16,7 +16,7 @@ use bitcoin::{Address, Network};
 use std::str::FromStr;
 use xyzpub::{convert_version, Version};
 
-const GAP_LIMIT: u8 = 5;
+const GAP_LIMIT: u8 = 10;
 // Testnet address prefixes
 const PREFIX_VPUB: &str = "vpub";
 const PREFIX_TPUB: &str = "tpub";
@@ -101,7 +101,6 @@ fn generate_addresses_and_get_balances(
     let tpub_string = convert_version(config.xpub_key.clone(), &Version::Tpub).unwrap();
     println!("converted address {tpub_string}");
     let xpub_key = Xpub::from_str(&tpub_string)?;
-    // let secp: Secp256k1<All> = Secp256k1::new();
 
     // Checking for change= 0 (receiving) and 1 (change) addresses
     for i in 0..2 {

@@ -1,5 +1,6 @@
 use reqwest::blocking::get;
 use reqwest::StatusCode;
+use rust_decimal::Decimal;
 use serde_json::Value;
 use std::error::Error;
 use std::io::Error as IoError;
@@ -25,6 +26,8 @@ const PREFIX_UPUB: &str = "upub";
 const PREFIX_XPUB: &str = "xpub";
 const PREFIX_YPUB: &str = "ypub";
 const PREFIX_ZPUB: &str = "zpub";
+
+const SATS_IN_BTC: i64 = 100_000_000;
 
 pub struct Config {
     pub xpub_key: String,
@@ -78,6 +81,16 @@ impl BtcAddress {
     }
 }
 
+fn generate_address(xpub_key: Xpub, path: &str) -> Result<String, Box<dyn Error>> {
+    let secp: Secp256k1<All> = Secp256k1::new();
+    let path = DerivationPath::from_str(path)?;
+    let child_pub_key = xpub_key.derive_pub(&secp, &path)?;
+    let compressed_pub_key =
+        CompressedPublicKey::from(CompressedPublicKey(child_pub_key.public_key));
+    let address = Address::p2wpkh(&compressed_pub_key, Network::Testnet);
+    Ok(address.to_string())
+}
+
 fn generate_addresses_and_get_balances(
     config: &Config,
     addresses: &mut Vec<BtcAddress>,
@@ -87,8 +100,8 @@ fn generate_addresses_and_get_balances(
     // conversion. Needs more digging.
     let tpub_string = convert_version(config.xpub_key.clone(), &Version::Tpub).unwrap();
     println!("converted address {tpub_string}");
-    let xpub = Xpub::from_str(&tpub_string)?;
-    let secp: Secp256k1<All> = Secp256k1::new();
+    let xpub_key = Xpub::from_str(&tpub_string)?;
+    // let secp: Secp256k1<All> = Secp256k1::new();
 
     // Checking for change= 0 (receiving) and 1 (change) addresses
     for i in 0..2 {
@@ -96,13 +109,7 @@ fn generate_addresses_and_get_balances(
         let mut j = 0;
 
         loop {
-            println!("loop count {j}");
-            let path = DerivationPath::from_str(&format!("{i}/{j}"))?;
-            let child_pub_key = xpub.derive_pub(&secp, &path)?;
-            let compressed_pub_key =
-                CompressedPublicKey::from(CompressedPublicKey(child_pub_key.public_key));
-            let address = Address::p2wpkh(&compressed_pub_key, Network::Testnet);
-            let addr_str = address.to_string();
+            let addr_str = generate_address(xpub_key, &format!("{i}/{j}"))?;
 
             let mut balance = 0;
             let mut success = true;
@@ -143,26 +150,31 @@ fn generate_addresses_and_get_balances(
 }
 
 fn get_base_url(xpub_key: &str) -> Result<&str, Box<dyn Error>> {
-    println!("get_base_url xpub_key {xpub_key}");
-    if xpub_key.starts_with(PREFIX_TPUB) || xpub_key.starts_with(PREFIX_UPUB) || xpub_key.starts_with(PREFIX_VPUB) {
-        return Ok("https://api.blockcypher.com/v1/btc/test3/addrs/"); 
-    } 
-    else if xpub_key.starts_with(PREFIX_XPUB) || xpub_key.starts_with(PREFIX_YPUB) || xpub_key.starts_with(PREFIX_ZPUB) {
+    if xpub_key.starts_with(PREFIX_TPUB)
+        || xpub_key.starts_with(PREFIX_UPUB)
+        || xpub_key.starts_with(PREFIX_VPUB)
+    {
+        return Ok("https://api.blockcypher.com/v1/btc/test3/addrs/");
+    } else if xpub_key.starts_with(PREFIX_XPUB)
+        || xpub_key.starts_with(PREFIX_YPUB)
+        || xpub_key.starts_with(PREFIX_ZPUB)
+    {
         return Ok("https://api.blockcypher.com/v1/btc/main/addrs/");
     }
 
-    Err(Box::new(IoError::new(ErrorKind::InvalidInput, "xpub_key does not have a known prefix")))
+    Err(Box::new(IoError::new(
+        ErrorKind::InvalidInput,
+        "xpub_key does not have a known prefix",
+    )))
 }
 
 // This function can be fully async which should increase performance
 // significantly since this is primarily an I/O operation
 fn get_address_balance(address: &str, base_url: &str) -> Result<u64, Box<dyn Error>> {
-    println!("get_address_balance");
     // To not hit rate limits of free APIs
     sleep(Duration::from_millis(500));
 
     let url = format!("{}/balance", base_url.to_owned() + address);
-    println!("using url {url}");
     let response = get(url)?;
     let balance: u64;
 
@@ -186,7 +198,7 @@ fn print_balances(addresses: &Vec<BtcAddress>) {
         return;
     }
     println!("");
-    println!("{:<12} {:<50} {:<20}", "Path Suffix", "Address", "Balance");
+    println!("{:<12} {:<50} {:<20}", "Path_Suffix", "Address", "Balance");
     for addr in addresses {
         if addr.balance_query_successful {
             println!(
@@ -202,7 +214,9 @@ fn print_balances(addresses: &Vec<BtcAddress>) {
         }
         sum += addr.balance;
     }
-    println!("Total Combined Balance: {} Satoshis", sum);
+
+    let btc = Decimal::from(sum) / Decimal::new(SATS_IN_BTC, 0);
+    println!("Total Combined Balance: {} sats, {} btc", sum, btc);
 }
 
 pub fn run(c: Config) -> Result<(), Box<dyn Error>> {
@@ -220,17 +234,15 @@ pub fn run(c: Config) -> Result<(), Box<dyn Error>> {
 mod tests {
     use crate::{get_base_url, PREFIX_TPUB, PREFIX_VPUB};
 
-
     #[test]
     fn check_url() {
-
         let keys = vec![
             "tpubDCpP2bUR4GbTZkfizWRozZVuZ2aohedBEzpHzvckRFXvKDWko6kA4T3PdUsFgXL9qtJ8326v52uwxG6HCMkA9fPym6QkiUgjqKyDx1eHAgy",
             "vpub5YnDu2Ju3dZ3bN6dsbsUNTyXsyCFq297s9BZ5amqKL2GTjDbDZZwft4HM2sJAD55EhXbvVPvccNoVWNYN74tfkaUxpGbs8PXhvFXQmgCrAA",
         ];
         for key in keys {
             let expected = "https://api.blockcypher.com/v1/btc/test3/addrs/";
-            
+
             match get_base_url(key) {
                 Ok(base_url) => assert_eq!(base_url, expected),
                 Err(_) => panic!("Failed for key {}", key),

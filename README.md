@@ -6,6 +6,11 @@ Usage:
     
     Wallet_balance <xpub_key> [gap_limit]
 
+    or
+
+    cd  <project folder>
+    cargo run -- <xpub_key> [gap_limit]
+
 The default gap limit in this tool is smaller than the usual 20 to avoid hitting rate limits with free APIs quickly. But this can be changed by passing in whatever value as the second command line argument.
 
 The tool uses blockcypher apis internally. Ideally you would want to configure this from outside via env vars but given the diversity of apis and api patterns it seemed impractical to generalize this part in this context.

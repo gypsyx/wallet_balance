@@ -47,6 +47,10 @@ impl Config {
             gap_limit = args[2]
                 .parse::<u8>()
                 .map_err(|_| "Failed to parse gap_limit argument")?;
+
+            if gap_limit <=0 {
+                return Err("gap limit argument needs to be greater than 0")
+            }
         } else {
             gap_limit = GAP_LIMIT;
         }
